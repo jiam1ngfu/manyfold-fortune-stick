@@ -1,32 +1,50 @@
-# Manyfold Agent 的 Cloudflare Worker 起步模板
+# 问一签 —— 在线求签游戏
 
 [English](README.md) · 中文
 
-一个预置了 [Manyfold](https://manyfold.ai) AI agent 连接能力的 Cloudflare Workers 应用模板。
-一键部署，在页面里连接你的 Manyfold agents，用流式聊天验证链路 —— 然后在一套已经跑通的
-技术栈上，构建你真正想做的应用。
+一个跑在 Cloudflare Workers 上的轻量求签游戏。写下心里的事，按下签运打印机上的印键，机器
+打出一张签纸；先看签本身，再主动点「解签」，得到一份结合你自己问题的解读。
+
+一次完整求签大约 30–60 秒。解读给的是思考角度和一件能执行的小事，不以确定语气预言未来。
+
+解读由你连接的 [Manyfold](https://manyfold.ai) agent 生成，只需在隐藏的设置页里连一次。
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/manyfold-open/cloudflare-worker-starter)
 
 ```
 ┌──────────────┐    ┌───────────────┐    ┌────────────────────┐    ┌──────────────────┐
-│ 1. 部署      │ →  │ 2. 打开你的   │ →  │ 3. 连接 agent      │ →  │ 4. 聊天验证，    │
-│  (按钮或     │    │    Worker URL │    │  （在 Manyfold 上  │    │    然后开始构建  │
-│  fork+Builds)│    │               │    │    授权批准）      │    │    你的应用      │
+│ 1. 部署      │ →  │ 2. 打开       │ →  │ 3. 连接 agent      │ →  │ 4. 把 URL 发出去 │
+│  (按钮或     │    │    <url>/#se… │    │  （在 Manyfold 上  │    │    玩家直接      │
+│  fork+Builds)│    │    ttings     │    │    授权批准）      │    │    求签即可      │
 └──────────────┘    └───────────────┘    └────────────────────┘    └──────────────────┘
 ```
 
-## 你会得到什么
+## 游戏流程
 
-- **连接 agent** —— 与 Manyfold 之间的设备码（device-code）授权握手：弹窗打开 Manyfold
-  的授权页，你核对确认码、勾选要共享的 agents 即可。Bearer token 以 AES-GCM 加密存入你的
-  D1 数据库，永远不会到达浏览器。
-- **聊天** —— 与每个已连接 agent 的流式聊天（A2A `message/stream` over SSE）。对话持久化
-  在 D1 中，并保留 agent 侧的 `contextId`，刷新页面后多轮上下文依然有效。
-- **设置页** —— 查看所有已连接的 agents，重新运行（免费、不计费的）连通性探测，断开连接，
-  或继续连接更多。重复授权同一个 agent 会原地轮换它的 token。
-- **一个干净的迭代起点** —— Vite + React 19 + Hono 跑在同一个 Worker 上，D1 采用零迁移
-  schema，几乎没有魔法。加一个路由、一张表、一个组件，直接发布。
+- **提问** —— 一个问题，5–120 字，必填。不知道问什么的话，页面给了三个可点的示例。
+- **打印** —— 按下机器面板上的「印」键。马达转起来，签纸从出纸口吐出来，整页的底色也换成
+  这一签的等级色。
+- **看签** —— 签号、等级（上上签／上签／中签／下签）、四字签名和直排的两句签诗。让你先看、
+  先猜，再自己决定什么时候揭晓。
+- **解签** —— 四段式解读：一句话签意、回应你的问题、值得留意、可以做的一件小事。
+- **分享／继续追问／再求一签** —— 一张可保存转发的图，一段基于同一支签的追问，或者新的一轮。
+- **求签记录** —— 每一轮都留在**你自己的浏览器**里，可以删除单条或清空全部。
+
+两条规则不是「打算这么做」，而是实现上保证的：
+
+1. **按下印键的那一刻签就定了。** 抽签在服务端进行，先落库再告诉浏览器。刷新页面、解签
+   失败、**重试解签**，读回来的都是同一行 —— 走纸动画只是在放一支已经定死的签。除了用户
+   主动「再求一签」，没有任何路径会重抽。
+2. **追问不会改变签。** 每一轮都把存下来的问题、签和解读原样带进提示词，即使 agent 侧的
+   上下文丢了，也不会串到另一支签上。
+
+AI 只负责解签，不负责抽签。AI 不可用时，页面显示这支签预先写好的通用解释（有明确标注）和
+**重试解签** 按钮 —— 签诗在整个过程中始终可见。
+
+## 设置页
+
+设置页**只能通过 URL 进入：`<你的地址>/#settings`**，游戏界面上刻意不放入口 —— 它是给部署
+这个游戏的人用的，不是玩家流程的一部分。在那里连一次 Manyfold agent，解签就能用了。
 
 ## 部署
 
@@ -59,7 +77,7 @@
 
 ### 部署之后（两条路径通用）
 
-URL 公开后强烈建议设置 —— 否则任何拿到 URL 的人都能用你的 agents 聊天（消耗你的额度）：
+URL 公开后强烈建议设置 —— 否则任何拿到 URL 的人都能用你的 agents 解签（消耗你的额度）：
 
 ```bash
 npx wrangler secret put ADMIN_PASSWORD
@@ -100,9 +118,9 @@ Hono 应用（src/worker/index.ts）
    │ ensureSchema → Origin 校验 → 管理密码门
    ├─ /api/connect*   src/worker/connect.ts   Manyfold 设备码授权握手
    ├─ /api/agents*    src/worker/connect.ts   列表 / 验证 / 断开
-   ├─ /api/agents/:id/chat  src/worker/chat.ts  SSE 透传 + 持久化
+   ├─ /api/readings*  src/worker/fortune.ts   抽签、解签、追问（SSE）
    ▼
-D1（settings、connect_sessions、agents、conversations、messages）
+D1（settings、connect_sessions、agents、readings、reading_messages）
 Manyfold A2A（message/stream、tasks/get）   ← 每个 agent 独立的 bearer token，调用时解密
 ```
 
@@ -111,11 +129,12 @@ Manyfold A2A（message/stream、tasks/get）   ← 每个 agent 独立的 bearer
 | `src/worker/index.ts` | 路由、中间件、错误映射 |
 | `src/worker/connect.ts` | Manyfold 授权握手与已连接 agent 的存储 |
 | `src/worker/a2a.ts` | A2A JSON-RPC + SSE 流消费器、SSRF 防护、密钥脱敏 |
-| `src/worker/chat.ts` | 一轮聊天：上游 agent SSE 进、应用 SSE 出、D1 持久化 |
+| `src/worker/fortune.ts` | 抽签、解签、追问 —— 游戏的服务端那一半 |
+| `src/shared/sticks.ts` | 36 支原创签（worker 和浏览器共用） |
 | `src/worker/crypto.ts` | AES-GCM 加解密、常量时间比较 |
 | `src/worker/db.ts` | schema（运行时自动应用）与设置存储 |
 | `src/shared/types.ts` | worker 与浏览器共享的 API 类型 |
-| `src/app/` | React 应用：聊天 + 设置两个标签页、连接面板、密码门 |
+| `src/app/` | React 应用：游戏、求签记录、只走 URL 的设置页 |
 
 ## 如何扩展
 
@@ -125,10 +144,12 @@ Manyfold A2A（message/stream、tasks/get）   ← 每个 agent 独立的 bearer
   外的路由在设置了管理密码后会自动受保护。
 - **加数据表** —— 在 `src/worker/db.ts` 的 `SCHEMA` 里追加
   `CREATE TABLE IF NOT EXISTS …`；下一个请求就会创建，本地和线上都一样。
-- **加页面** —— 在 `src/app/App.tsx` 中添加组件和标签页。
+- **加页面** —— 在 `src/app/App.tsx` 里加组件和路由（用 `location.hash`，没有 router 依赖）。
+- **改签或加签** —— `src/shared/sticks.ts`。每个字段都要填满：`general` 和 `action` 同时
+  是 AI 不可用时的兜底文案。
 - **在服务端代码里调用你的 agent** —— `src/worker/connect.ts` 的
-  `credentialFor(env, agentId)` 会返回任意已连接 agent 的 `{ rpcUrl, token }`；完整的流式
-  调用见 `src/worker/chat.ts`，后台任务也可以改用非流式的 `message/send` + `tasks/get`。
+  `credentialFor(env, agentId)` 会返回任意已连接 agent 的 `{ rpcUrl, token }`；阻塞式的一轮
+  见 `src/worker/fortune.ts` 里的 `askAgent`，流式的见 `handleFollowUp`。
 
 `AGENTS.md` 列出了迭代时必须保持的不变量 —— 对人类和 AI agent 都适用。
 
@@ -142,7 +163,7 @@ Manyfold A2A（message/stream、tasks/get）   ← 每个 agent 独立的 bearer
   生成的密钥能防住部分暴露（日志、单表查询），但防不住整库导出。设置 secret 即可消除
   这个隐患。
 - **应用默认是开放的。** 在设置 `ADMIN_PASSWORD` 之前，任何拿到 URL 的人都能连接 agent
-  并聊天。设置后，除 `/api/health` 和 `/api/state` 外的所有路由都需要密码（常量时间比较；
+  并求签解签。设置后，除 `/api/health` 和 `/api/state` 外的所有路由都需要密码（常量时间比较；
   通过 header 传输，存放在 sessionStorage）。
 - Agent 的 RPC URL 会被校验（仅允许 https，生产环境拒绝私有/回环地址）；连通性验证使用
   不计费的 `tasks/get` 探测而非真实对话；所有错误信息在到达日志或浏览器之前都会剥离

@@ -1,7 +1,9 @@
 /**
- * Manage connected agents: see their status, re-run the (free) auth probe,
- * disconnect, and connect more. Re-connecting an agent that is already here
- * rotates its token in place rather than duplicating it.
+ * 设置页，只通过 #settings 这个 URL 进入，主界面上没有入口 —— 它给部署这个游戏的人用，
+ * 不是玩家流程的一部分。
+ *
+ * 这里管理解签用的 Manyfold agent：看状态、重跑（免费的）鉴权探测、断开、再连。
+ * 重新授权一个已经连着的 agent 会就地换掉它的 token，不会多出一条。
  */
 
 import { useState } from 'react';
@@ -47,9 +49,17 @@ export default function SettingsView(props: {
 
   return (
     <section className="panel">
-      <h2>Connected agents</h2>
+      <h2>设置</h2>
+      <p className="muted small">
+        这一页只有 <code>#settings</code> 这个地址能进，游戏界面上不显示入口。
+      </p>
+
+      <h3>解签用的 agent</h3>
       {props.agents.length === 0 && (
-        <p className="muted">No agents connected yet — connect one below.</p>
+        <p className="muted">还没有连接 agent。连一个之后，「解签」才能结合用户的问题作答。</p>
+      )}
+      {props.agents.length > 1 && (
+        <p className="muted small">连了多个时，解签会自动用第一个已验证且未过期的。</p>
       )}
 
       <div className="agent-list">
@@ -59,44 +69,44 @@ export default function SettingsView(props: {
               <div className="agent-card-title">
                 <strong>{agent.name}</strong>
                 {agent.verified ? (
-                  <span className="badge ok">verified</span>
+                  <span className="badge ok">已验证</span>
                 ) : (
                   <span className="badge warn" title={agent.warning ?? undefined}>
-                    unverified
+                    未验证
                   </span>
                 )}
               </div>
               {agent.description && <p className="muted">{agent.description}</p>}
               <p className="muted small">
-                {new URL(agent.rpcUrl).host} · connected {new Date(agent.connectedAt).toLocaleString()}
-                {agent.expiresAt ? ` · authorization expires ${new Date(agent.expiresAt).toLocaleString()}` : ''}
+                {new URL(agent.rpcUrl).host} · 连接于 {new Date(agent.connectedAt).toLocaleString()}
+                {agent.expiresAt ? ` · 授权到期 ${new Date(agent.expiresAt).toLocaleString()}` : ''}
               </p>
               {agent.warning && <p className="warn small">⚠ {agent.warning}</p>}
             </div>
             <div className="agent-card-actions">
               <button
-                className="button subtle"
+                className="text-action"
                 onClick={() => void verify(agent.agentId)}
                 disabled={busyId === agent.agentId}
               >
-                {busyId === agent.agentId ? 'Checking…' : 'Re-verify'}
+                {busyId === agent.agentId ? '检查中…' : '重新验证'}
               </button>
               {confirmId === agent.agentId ? (
                 <span className="row">
                   <button
-                    className="button danger"
+                    className="text-action danger"
                     onClick={() => void disconnect(agent.agentId)}
                     disabled={busyId === agent.agentId}
                   >
-                    Really disconnect
+                    确认断开
                   </button>
-                  <button className="button subtle" onClick={() => setConfirmId(null)}>
-                    Keep
+                  <button className="text-action" onClick={() => setConfirmId(null)}>
+                    保留
                   </button>
                 </span>
               ) : (
-                <button className="button danger-outline" onClick={() => setConfirmId(agent.agentId)}>
-                  Disconnect
+                <button className="text-action danger" onClick={() => setConfirmId(agent.agentId)}>
+                  断开
                 </button>
               )}
             </div>
@@ -106,19 +116,17 @@ export default function SettingsView(props: {
 
       {error && <div className="notice error">{error}</div>}
 
-      <h3>Connect more agents</h3>
+      <h3>连接更多 agent</h3>
       <p className="muted">
-        Re-approving an agent that is already connected rotates its token in place — useful when an
-        authorization expired.
+        重新授权一个已经连着的 agent 会就地换掉它的 token —— 授权过期时用得上。
       </p>
       <ConnectPanel initialSession={props.initialSession} onConnected={props.refreshState} />
 
-      <h3>About this deployment</h3>
+      <h3>关于这个部署</h3>
       <p className="muted">
-        Agent tokens are AES-GCM encrypted in your D1 database and never sent to the browser. Set
-        the <code>ADMIN_PASSWORD</code> secret to lock this page (and chat) behind a password, and{' '}
-        <code>CONFIG_ENCRYPTION_KEY</code> to keep the encryption key out of the database. See the
-        README for details.
+        agent 的 token 以 AES-GCM 加密存在 D1 里，任何时候都不会发到浏览器。设置{' '}
+        <code>ADMIN_PASSWORD</code> 可以把整个站（包括游戏）锁在密码后面，设置{' '}
+        <code>CONFIG_ENCRYPTION_KEY</code> 可以让加密密钥不落库。详见 README。
       </p>
     </section>
   );

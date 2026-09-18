@@ -4,6 +4,10 @@
  * and free of runtime imports from either side.
  */
 
+import type { FortuneStick } from './sticks';
+
+/* ───────── Manyfold connect (settings page) ───────── */
+
 /** A Manyfold agent the user authorized, as exposed to the browser (never the token). */
 export interface ConnectedAgent {
   agentId: string;
@@ -44,31 +48,68 @@ export interface AppState {
   adminOk: boolean;
   connect: { session: ConnectSession | null };
   agents: ConnectedAgent[];
+  /** Can a reading be interpreted right now? False when no agent is connected. */
+  interpreterReady: boolean;
 }
 
-export interface ChatMessage {
-  id: number;
-  role: 'user' | 'agent';
-  content: string;
-  status: 'complete' | 'error' | 'input-required';
+/* ───────── 问一签 ───────── */
+
+/**
+ * The four-part reading the AI produces. Field order is the display order
+ * (see the product spec, step 4).
+ */
+export interface Interpretation {
+  /** 一句话签意 */
+  meaning: string;
+  /** 回应你的问题（80–150 字） */
+  answer: string;
+  /** 值得留意 */
+  notice: string;
+  /** 可以做的一件小事 */
+  action: string;
+  /**
+   * 'ai'      — personalised, generated from the user's question
+   * 'fallback'— the stick's pre-written text, shown because generation failed
+   */
+  source: 'ai' | 'fallback';
+}
+
+export type ReadingStatus = 'drawn' | 'interpreted' | 'failed';
+
+/**
+ * One complete 求签: the question, the stick that was drawn (fixed at shake time,
+ * never re-rolled) and the interpretation once it exists.
+ */
+export interface Reading {
+  id: string;
+  question: string;
+  stick: FortuneStick;
+  status: ReadingStatus;
+  interpretation: Interpretation | null;
+  /** Why the last interpretation attempt failed, if it did. */
   error: string | null;
   createdAt: string;
 }
 
-export interface ConversationInfo {
-  contextId: string | null;
-  activeTaskId: string | null;
+/** One turn of 继续追问. */
+export interface FollowUpMessage {
+  id: number;
+  role: 'user' | 'agent';
+  content: string;
+  status: 'complete' | 'error';
+  error: string | null;
+  createdAt: string;
 }
 
 /**
- * Events the Worker streams to the browser during a chat turn (SSE `data:` payloads).
+ * Events the Worker streams to the browser during a 追问 turn (SSE `data:` payloads).
  * `text` always carries the FULL accumulated reply — the client replaces, never appends,
  * so A2A artifact append/lastChunk semantics stay entirely server-side.
  */
-export type ChatEvent =
-  | { type: 'status'; state: string; taskId: string | null; contextId: string | null }
+export type FollowUpEvent =
+  | { type: 'status'; state: string }
   | { type: 'text'; text: string }
-  | { type: 'done'; state: string; text: string }
+  | { type: 'done'; text: string }
   | { type: 'error'; message: string };
 
 export interface ApiErrorBody {

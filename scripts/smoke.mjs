@@ -41,6 +41,24 @@ const checks = [
     },
   },
   {
+    name: 'POST /api/readings validates the question (game API is wired)',
+    run: async () => {
+      // 空问题必须被拒 —— 顺便证明抽签路由活着，而且不会真的抽一支签出来留在库里。
+      const response = await fetch(`${base}/api/readings`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', origin: base },
+        body: JSON.stringify({ question: '' }),
+      });
+      // 401 = 这个部署设了 ADMIN_PASSWORD，路由本身依然是通的。
+      if (response.status === 401) return;
+      if (response.status !== 400) throw new Error(`HTTP ${response.status}, expected 400 or 401`);
+      const body = await response.json();
+      if (body?.error?.code !== 'question_required') {
+        throw new Error(`unexpected body: ${JSON.stringify(body)}`);
+      }
+    },
+  },
+  {
     name: 'unknown /api/* routes return JSON 404',
     run: async () => {
       const response = await fetch(`${base}/api/definitely-not-a-route`);

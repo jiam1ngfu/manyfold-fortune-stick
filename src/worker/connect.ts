@@ -305,12 +305,12 @@ async function saveConnectedAgent(env: Env, entry: PollAgent): Promise<Connected
     )
     .run();
 
-  // A rotated token starts a fresh session on the agent's side; the old conversation
-  // ids belong to the old credential and would only confuse the next turn.
+  // 换了 token 就等于在 agent 侧开了一个新会话：存在求签记录上的 contextId 属于旧凭证，
+  // 留着只会让下一次追问带着一个对方不认识的上下文过去。签本身一个字都不动。
   await env.DB.prepare(
-    'UPDATE conversations SET context_id = NULL, active_task_id = NULL, updated_at = ? WHERE agent_id = ?',
+    'UPDATE readings SET context_id = NULL, active_task_id = NULL, updated_at = ? WHERE context_id IS NOT NULL',
   )
-    .bind(t, entry.agentId)
+    .bind(t)
     .run();
 
   return {
@@ -388,14 +388,8 @@ export async function verifyAgent(env: Env, agentId: string): Promise<ConnectedA
   return agent;
 }
 
-/** Removes the agent and everything that hangs off it. */
+/** Removes the agent. */
 export async function disconnectAgent(env: Env, agentId: string): Promise<void> {
-  await env.DB.batch([
-    env.DB.prepare(
-      `DELETE FROM messages WHERE conversation_id IN
-       (SELECT id FROM conversations WHERE agent_id = ?)`,
-    ).bind(agentId),
-    env.DB.prepare('DELETE FROM conversations WHERE agent_id = ?').bind(agentId),
-    env.DB.prepare('DELETE FROM agents WHERE agent_id = ?').bind(agentId),
-  ]);
+  // 求签记录不挂在 agent 上：换一个解签 agent 不该抹掉用户抽过的签。
+  await env.DB.prepare('DELETE FROM agents WHERE agent_id = ?').bind(agentId).run();
 }

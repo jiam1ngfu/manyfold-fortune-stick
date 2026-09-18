@@ -4,4 +4,6 @@ import { cloudflare } from '@cloudflare/vite-plugin';
 
 export default defineConfig({
   plugins: [react(), cloudflare()],
+  // 让 `PORT=… npm run dev` 生效，这样启动器分配的端口能被用上。
+  server: { port: Number(process.env.PORT) || 5173 },
 });

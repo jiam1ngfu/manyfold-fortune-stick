@@ -26,7 +26,7 @@ export default function ConnectPanel(props: {
   const openConsent = (url: string) => {
     popup.current = window.open(url, 'manyfold-connect', 'width=520,height=760,noopener,noreferrer');
     if (!popup.current) {
-      setError('The popup was blocked — use "Reopen the authorization page" below.');
+      setError('The popup was blocked — use "重新打开授权页面" below.');
     }
   };
 
@@ -88,28 +88,27 @@ export default function ConnectPanel(props: {
   return (
     <div className="connect-panel">
       {!session && (
-        <button className="button primary" onClick={() => void start()} disabled={starting}>
-          {starting ? 'Opening…' : 'Connect a Manyfold agent'}
+        <button className="text-action strong" onClick={() => void start()} disabled={starting}>
+          {starting ? '打开中…' : '连接 Manyfold agent'}
         </button>
       )}
 
       {session && (
         <div className="connect-waiting">
           <div className="connect-code">
-            <small>Confirmation code</small>
+            <small>确认码</small>
             <strong>{session.userCode}</strong>
           </div>
           <p className="muted">
-            Check that the Manyfold page shows this exact code before approving — that is how you
-            know you are authorizing <em>this</em> app.
+            批准前先确认 Manyfold 页面上显示的是同一个码 —— 这是确认你授权的是<em>这个</em>应用的唯一方式。
           </p>
-          <p className="muted">Waiting for you to approve on Manyfold…</p>
+          <p className="muted">等待你在 Manyfold 上批准…</p>
           <div className="row">
-            <button className="button" onClick={() => openConsent(session.authUrl)}>
-              Reopen the authorization page
+            <button className="text-action" onClick={() => openConsent(session.authUrl)}>
+              重新打开授权页面
             </button>
-            <button className="button danger" onClick={() => void cancel()}>
-              Cancel
+            <button className="text-action danger" onClick={() => void cancel()}>
+              取消
             </button>
           </div>
         </div>
@@ -117,26 +116,26 @@ export default function ConnectPanel(props: {
 
       {!session && !result && (
         <p className="muted">
-          Opens Manyfold in a popup where you pick which of your agents to share with this app.
+          会弹出 Manyfold 的页面，在那里挑选要分享给这个应用的 agent。
         </p>
       )}
 
-      {result?.status === 'denied' && <div className="notice error">You declined the request on Manyfold.</div>}
+      {result?.status === 'denied' && <div className="notice error">你在 Manyfold 上拒绝了这次请求。</div>}
       {result?.status === 'expired' && (
-        <div className="notice error">That authorization expired — start again.</div>
+        <div className="notice error">这次授权已经过期，重新来一次。</div>
       )}
       {result?.status === 'approved' && (
         <div className="connect-result">
           <strong>
             {result.agents?.length
-              ? `Connected ${result.agents.length} agent${result.agents.length === 1 ? '' : 's'}`
-              : 'Approved, but no agents were shared'}
+              ? `已连接 ${result.agents.length} 个 agent`
+              : '已批准，但没有分享任何 agent'}
           </strong>
           {(result.agents ?? []).map((agent) => (
             <div className="connect-result-row" key={agent.agentId}>
               <span>✓ {agent.name}</span>
               {!agent.verified && (
-                <em className="warn">unverified{agent.warning ? ` — ${agent.warning}` : ''}</em>
+                <em className="warn">未验证{agent.warning ? ` — ${agent.warning}` : ''}</em>
               )}
             </div>
           ))}

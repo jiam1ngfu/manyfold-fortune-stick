@@ -1,20 +1,18 @@
 /**
- * Client side of the chat stream. EventSource cannot POST or set headers, so this
- * is a plain fetch whose response body is read as SSE: frames separated by a blank
- * line, JSON payload on `data:` lines. Each parsed ChatEvent is handed to the
- * caller in order; the promise resolves when the stream closes.
+ * 追问流的客户端。EventSource 不能 POST 也不能带 header，所以这里用 fetch，
+ * 把响应体当 SSE 读：空行分帧，`data:` 行里是 JSON。每个事件按顺序交给调用方，
+ * 流关闭时 promise 结束。
  */
 
-import type { ChatEvent } from '../shared/types';
+import type { ApiErrorBody, FollowUpEvent } from '../shared/types';
 import { ApiError, authHeaders } from './api';
-import type { ApiErrorBody } from '../shared/types';
 
-export async function streamChat(
-  agentId: string,
+export async function streamFollowUp(
+  readingId: string,
   message: string,
-  onEvent: (event: ChatEvent) => void,
+  onEvent: (event: FollowUpEvent) => void,
 ): Promise<void> {
-  const response = await fetch(`/api/agents/${encodeURIComponent(agentId)}/chat`, {
+  const response = await fetch(`/api/readings/${encodeURIComponent(readingId)}/follow-up`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', ...authHeaders() },
     body: JSON.stringify({ message }),
@@ -30,10 +28,10 @@ export async function streamChat(
     throw new ApiError(
       response.status,
       body?.error?.code ?? 'request_failed',
-      body?.error?.message ?? `Chat failed with HTTP ${response.status}.`,
+      body?.error?.message ?? `追问失败（HTTP ${response.status}）。`,
     );
   }
-  if (!response.body) throw new ApiError(502, 'no_stream', 'The chat response had no body.');
+  if (!response.body) throw new ApiError(502, 'no_stream', '追问的响应没有内容。');
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
@@ -54,7 +52,7 @@ export async function streamChat(
           .join('\n');
         if (data) {
           try {
-            onEvent(JSON.parse(data) as ChatEvent);
+            onEvent(JSON.parse(data) as FollowUpEvent);
           } catch {
             /* skip malformed frame */
           }

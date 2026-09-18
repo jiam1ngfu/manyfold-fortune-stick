@@ -1,34 +1,60 @@
-# Cloudflare Worker Starter for Manyfold Agents
+# 问一签 — an online fortune-stick game
 
 English · [中文](README_CN.md)
 
-A Cloudflare Workers app template pre-wired with [Manyfold](https://manyfold.ai) AI-agent
-connectivity. Deploy it in one click, connect your Manyfold agents from the page, verify the
-wiring with a streaming chat — then build whatever you actually wanted to build on top of a
-stack that already works.
+A small, ritual-feeling web game on Cloudflare Workers. You write down what is on your mind,
+press the key on the fortune printer, and it prints your stick on a slip of paper. You read
+the slip first, and only then tap **解签** for an interpretation written against *your*
+question.
+
+One round takes 30–60 seconds. The reading offers angles and one small, doable next step —
+it never claims to predict what will happen.
+
+Interpretations come from an [Manyfold](https://manyfold.ai) agent you connect once from the
+hidden settings page.
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/manyfold-open/cloudflare-worker-starter)
 
 ```
 ┌──────────────┐    ┌───────────────┐    ┌────────────────────┐    ┌──────────────────┐
-│ 1. Deploy    │ →  │ 2. Open your  │ →  │ 3. Connect an      │ →  │ 4. Chat to       │
-│  (button or  │    │    Worker URL │    │    agent (approve  │    │    verify, then  │
-│  fork+Builds)│    │               │    │    on Manyfold)    │    │    build your app│
+│ 1. Deploy    │ →  │ 2. Open       │ →  │ 3. Connect an      │ →  │ 4. Share the URL │
+│  (button or  │    │    <url>/#set… │    │    agent (approve  │    │    — players just│
+│  fork+Builds)│    │    tings      │    │    on Manyfold)    │    │    draw sticks   │
 └──────────────┘    └───────────────┘    └────────────────────┘    └──────────────────┘
 ```
 
-## What you get
+## The game
 
-- **Connect an agent** — a device-code handshake against Manyfold: a popup opens Manyfold's
-  consent page, you compare the confirmation code, pick which agents to share, done. Bearer
-  tokens land AES-GCM-encrypted in your D1 database and never reach the browser.
-- **Chat** — a streaming chat (A2A `message/stream` over SSE) with each connected agent.
-  Conversations persist in D1 and keep the agent-side `contextId`, so multi-turn context works
-  across reloads.
-- **Settings** — see every connected agent, re-run the (free, non-billing) connectivity probe,
-  disconnect, or connect more. Re-approving an agent rotates its token in place.
-- **A clean base to iterate on** — Vite + React 19 + Hono on one Worker, D1 with a
-  zero-migration schema, ~no magic. Add a route, a table, a component, ship.
+- **Ask** — one question, 5–120 characters, required. Three example questions for anyone who
+  does not know what to ask.
+- **Print** — press 印 on the machine. The motor runs, the slip feeds out of the slot, and the
+  whole page takes on the colour of the level you drew.
+- **Read the slip** — number, level (上上签 / 上签 / 中签 / 下签), the four-character name and a
+  two-line poem set vertically. Nothing else yet. You get to look at it and guess before you
+  reveal the rest.
+- **解签** — the four-part reading: what the stick means in one line, a response to your actual
+  question, something worth noticing, and one small thing you can do today.
+- **Share / ask again / draw again** — a save-ready image, a follow-up conversation grounded in
+  the same stick, or a fresh round.
+- **History** — every round is kept in *your* browser; delete one or clear them all.
+
+Two rules the implementation guarantees, not just intends:
+
+1. **The stick is fixed the moment the key is pressed.** It is drawn server-side and written
+   to D1 before the browser hears about it. Reloading the page, a failed interpretation and
+   *retrying* an interpretation all read back the same row — the paper-feed animation is only
+   playing back a stick that is already decided. Nothing re-rolls except a deliberate 再求一签.
+2. **Follow-ups never change the stick.** They are grounded in the stored question, stick and
+   reading on every turn, so even a lost agent-side context cannot drift onto another stick.
+
+The AI interprets; it never draws. When it is unavailable, the stick's own pre-written general
+text is shown (clearly labelled) with a **重试解签** button — the poem stays visible throughout.
+
+## Settings
+
+The settings page is **URL-only: `<your-url>/#settings`**. There is deliberately no link to it
+from the game — it is for whoever deployed this, not for players. Connect a Manyfold agent
+there once and 解签 starts working.
 
 ## Deploying
 
@@ -63,8 +89,8 @@ No secrets are required. Open the Worker URL and you are at step 2 of the diagra
 
 ### After deploying (both paths)
 
-Recommended once your URL is public — without a password anyone who finds the URL can chat
-with (and bill) your agents:
+Recommended once your URL is public — without a password anyone who finds the URL can draw
+sticks against (and bill) your agents:
 
 ```bash
 npx wrangler secret put ADMIN_PASSWORD
@@ -107,9 +133,9 @@ Hono app (src/worker/index.ts)
    │ ensureSchema → origin check → admin gate
    ├─ /api/connect*   src/worker/connect.ts   Manyfold device-code handshake
    ├─ /api/agents*    src/worker/connect.ts   list / verify / disconnect
-   ├─ /api/agents/:id/chat  src/worker/chat.ts  SSE passthrough + persistence
+   ├─ /api/readings*  src/worker/fortune.ts   draw, interpret, follow-up (SSE)
    ▼
-D1 (settings, connect_sessions, agents, conversations, messages)
+D1 (settings, connect_sessions, agents, readings, reading_messages)
 Manyfold A2A (message/stream, tasks/get)   ← per-agent bearer token, decrypted per call
 ```
 
@@ -118,11 +144,12 @@ Manyfold A2A (message/stream, tasks/get)   ← per-agent bearer token, decrypted
 | `src/worker/index.ts` | Routes, middleware, error mapping |
 | `src/worker/connect.ts` | The Manyfold handshake and connected-agent store |
 | `src/worker/a2a.ts` | A2A JSON-RPC + SSE stream consumer, SSRF guard, secret redaction |
-| `src/worker/chat.ts` | One chat turn: agent SSE in, app SSE out, D1 persistence |
+| `src/worker/fortune.ts` | Drawing, interpreting, follow-ups — the game's server half |
+| `src/shared/sticks.ts` | The 36 original sticks (shared by worker and browser) |
 | `src/worker/crypto.ts` | AES-GCM seal/unseal, constant-time compare |
 | `src/worker/db.ts` | Schema (runtime-applied) and settings store |
 | `src/shared/types.ts` | API types shared by worker and browser |
-| `src/app/` | React app: chat + settings tabs, connect panel, password gate |
+| `src/app/` | React app: the game, history, the URL-only settings page |
 
 ## Extending it
 
@@ -132,11 +159,13 @@ This template is a starting point, not a framework. The intended loop:
   `/api/state` is automatically behind the admin password when one is set.
 - **New table** — append a `CREATE TABLE IF NOT EXISTS …` to `SCHEMA` in `src/worker/db.ts`;
   it is created on the next request, locally and in production.
-- **New page** — add a component and a tab in `src/app/App.tsx`.
+- **New page** — add a component and a route in `src/app/App.tsx` (`location.hash`, no router).
+- **New sticks or new wording** — `src/shared/sticks.ts`. Keep every field filled: `general`
+  and `action` double as the fallback shown when the AI is unavailable.
 - **Call your agent from server code** — `credentialFor(env, agentId)` in
   `src/worker/connect.ts` gives you `{ rpcUrl, token }` for any connected agent; see
-  `src/worker/chat.ts` for a full streaming turn, or use non-streaming `message/send` +
-  `tasks/get` for background work.
+  `askAgent` in `src/worker/fortune.ts` for a blocking turn and `handleFollowUp` for a
+  streaming one.
 
 `AGENTS.md` lists the invariants to preserve while iterating — useful for both humans and
 AI agents working on this codebase.
@@ -152,8 +181,8 @@ AI agents working on this codebase.
   random key generated on first use and stored in the same database. The trade-off is
   honest: a generated key protects against partial exposure (logs, a table-scoped query) but
   not against a full database dump. Set the secret to remove that caveat.
-- **The app is open by default.** Anyone with the URL can connect agents and chat until you
-  set `ADMIN_PASSWORD`. All routes except `/api/health` and `/api/state` then require the
+- **The app is open by default.** Anyone with the URL can connect agents and draw sticks
+  until you set `ADMIN_PASSWORD` — which locks the game as well as the settings page. All routes except `/api/health` and `/api/state` then require the
   password (compared in constant time; sent as a header, kept in sessionStorage).
 - Agent RPC URLs are validated (https-only, private/loopback addresses rejected in
   production), verification uses a non-billing `tasks/get` probe rather than a real turn, and

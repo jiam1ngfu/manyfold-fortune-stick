@@ -24,22 +24,21 @@ export default function PasswordGate(props: { onSubmitted: () => Promise<void> }
   return (
     <div className="overlay">
       <form className="dialog" onSubmit={(event) => void submit(event)}>
-        <h2>Admin password required</h2>
+        <h2>需要管理密码</h2>
         <p className="muted">
-          This deployment is locked with the <code>ADMIN_PASSWORD</code> secret. Enter it to
-          continue.
+          这个部署设置了 <code>ADMIN_PASSWORD</code>，输入后才能继续。
         </p>
         <input
           type="password"
           autoFocus
           value={value}
           onChange={(event) => setValue(event.target.value)}
-          placeholder="Admin password"
-          aria-label="Admin password"
+          placeholder="管理密码"
+          aria-label="管理密码"
         />
-        {touched && <div className="notice error">That password was not accepted.</div>}
-        <button className="button primary" type="submit" disabled={submitting || !value.trim()}>
-          {submitting ? 'Checking…' : 'Unlock'}
+        {touched && <div className="notice error">密码不对。</div>}
+        <button className="text-action strong" type="submit" disabled={submitting || !value.trim()}>
+          {submitting ? '检查中…' : '解锁'}
         </button>
       </form>
     </div>

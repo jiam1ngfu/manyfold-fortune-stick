@@ -2,17 +2,20 @@
  * The Worker: a Hono app under /api, static assets for everything else.
  *
  * Route map (all responses JSON unless noted):
- *   GET    /api/health                      open   deploy-verification contract
- *   GET    /api/state                       open   bootstrap: agents + handshake + admin flags
- *   POST   /api/connect                     admin  start a Manyfold handshake
- *   POST   /api/connect/:id/poll            admin  poll it (2s cadence from the browser)
- *   DELETE /api/connect/:id                 admin  cancel it
- *   GET    /api/agents                      admin  connected agents (never tokens)
- *   POST   /api/agents/:agentId/verify      admin  re-run the non-billing auth probe
- *   DELETE /api/agents/:agentId             admin  disconnect + drop its conversation
- *   GET    /api/agents/:agentId/messages    admin  chat history
- *   DELETE /api/agents/:agentId/messages    admin  reset the conversation
- *   POST   /api/agents/:agentId/chat        admin  one chat turn (text/event-stream)
+ *   GET    /api/health                       open   deploy-verification contract
+ *   GET    /api/state                        open   bootstrap: agents + handshake + admin flags
+ *   POST   /api/readings                     admin  摇签完成 → 抽一支签并落库
+ *   GET    /api/readings/:id                 admin  刷新页面后恢复同一支签
+ *   POST   /api/readings/:id/interpret       admin  解签（失败落回通用解释，可重试）
+ *   DELETE /api/readings/:id                 admin  删除一条求签记录
+ *   GET    /api/readings/:id/messages        admin  追问历史
+ *   POST   /api/readings/:id/follow-up       admin  一轮追问 (text/event-stream)
+ *   POST   /api/connect                      admin  start a Manyfold handshake
+ *   POST   /api/connect/:id/poll             admin  poll it (2s cadence from the browser)
+ *   DELETE /api/connect/:id                  admin  cancel it
+ *   GET    /api/agents                       admin  connected agents (never tokens)
+ *   POST   /api/agents/:agentId/verify       admin  re-run the non-billing auth probe
+ *   DELETE /api/agents/:agentId              admin  disconnect
  *
  * "admin" routes require the x-admin-password header — but only when the
  * ADMIN_PASSWORD secret is set. Without it the app is open, which is what makes
@@ -34,9 +37,17 @@ import {
   startConnect,
   verifyAgent,
 } from './connect';
-import { getConversation, handleChatTurn, resetConversation } from './chat';
+import {
+  createReading,
+  deleteReading,
+  getReading,
+  handleFollowUp,
+  interpretReading,
+  interpreterReady,
+  listFollowUps,
+} from './fortune';
 
-const SERVICE = 'cloudflare-worker-starter';
+const SERVICE = 'wenyiqian';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -74,6 +85,8 @@ const adminHeaderOk = (c: { env: Env; req: { header: (name: string) => string | 
 };
 
 // Everything except /api/health and /api/state needs the password (when one is set).
+// Note this locks the game too, not just the settings page — that is the point of the
+// secret: an open deployment spends the owner's agent credits on every visitor.
 app.use('/api/*', async (c, next) => {
   const path = new URL(c.req.url).pathname;
   if (path !== '/api/health' && path !== '/api/state' && !adminHeaderOk(c)) {
@@ -117,9 +130,48 @@ app.get('/api/state', async (c) => {
     adminOk: adminHeaderOk(c),
     connect: { session },
     agents,
+    interpreterReady: await interpreterReady(c.env),
   };
   return c.json(state);
 });
+
+/* ───────── 求签 ───────── */
+
+app.post('/api/readings', async (c) => {
+  const body = (await c.req.json().catch(() => null)) as { question?: unknown } | null;
+  const reading = await createReading(c.env, body?.question);
+  return c.json({ reading }, 201);
+});
+
+app.get('/api/readings/:id', async (c) => c.json({ reading: await getReading(c.env, c.req.param('id')) }));
+
+app.post('/api/readings/:id/interpret', async (c) =>
+  c.json({ reading: await interpretReading(c.env, c.req.param('id')) }),
+);
+
+app.delete('/api/readings/:id', async (c) => {
+  await deleteReading(c.env, c.req.param('id'));
+  return c.json({ ok: true });
+});
+
+app.get('/api/readings/:id/messages', async (c) =>
+  c.json({ messages: await listFollowUps(c.env, c.req.param('id')) }),
+);
+
+app.post('/api/readings/:id/follow-up', async (c) => {
+  const body = (await c.req.json().catch(() => null)) as { message?: unknown } | null;
+  if (!body || typeof body.message !== 'string') {
+    throw new HttpError(400, 'bad_request', 'Body must be JSON with a string "message".');
+  }
+  return handleFollowUp({
+    env: c.env,
+    readingId: c.req.param('id'),
+    message: body.message,
+    waitUntil: (promise) => c.executionCtx.waitUntil(promise),
+  });
+});
+
+/* ───────── Manyfold connect (settings) ───────── */
 
 app.post('/api/connect', async (c) => {
   const session = await startConnect(c.env, c.req.url);
@@ -145,28 +197,6 @@ app.post('/api/agents/:agentId/verify', async (c) =>
 app.delete('/api/agents/:agentId', async (c) => {
   await disconnectAgent(c.env, c.req.param('agentId'));
   return c.json({ ok: true });
-});
-
-app.get('/api/agents/:agentId/messages', async (c) =>
-  c.json(await getConversation(c.env, c.req.param('agentId'))),
-);
-
-app.delete('/api/agents/:agentId/messages', async (c) => {
-  await resetConversation(c.env, c.req.param('agentId'));
-  return c.json({ ok: true });
-});
-
-app.post('/api/agents/:agentId/chat', async (c) => {
-  const body = (await c.req.json().catch(() => null)) as { message?: unknown } | null;
-  if (!body || typeof body.message !== 'string') {
-    throw new HttpError(400, 'bad_request', 'Body must be JSON with a string "message".');
-  }
-  return handleChatTurn({
-    env: c.env,
-    agentId: c.req.param('agentId'),
-    message: body.message,
-    waitUntil: (promise) => c.executionCtx.waitUntil(promise),
-  });
 });
 
 app.all('/api/*', () => {

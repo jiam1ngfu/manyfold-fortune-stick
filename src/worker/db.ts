@@ -60,27 +60,35 @@ CREATE TABLE IF NOT EXISTS agents (
   connected_at TEXT NOT NULL
 );
 
--- One conversation per agent. context_id / active_task_id give the agent multi-turn
--- memory across requests; both are cleared when the conversation is reset.
-CREATE TABLE IF NOT EXISTS conversations (
+-- 一次求签。抽中的签在摇签完成时写进这里，之后永不改动：刷新页面、解签失败或
+-- 追问，都从这一行读回同一支签。interpretation 是解签结果的 JSON。
+CREATE TABLE IF NOT EXISTS readings (
   id             TEXT PRIMARY KEY,
-  agent_id       TEXT NOT NULL UNIQUE,
+  question       TEXT NOT NULL,
+  stick_no       INTEGER NOT NULL,
+  status         TEXT NOT NULL DEFAULT 'drawn',
+  interpretation TEXT,
+  error          TEXT,
   context_id     TEXT,
   active_task_id TEXT,
+  created_at     TEXT NOT NULL,
   updated_at     TEXT NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS messages (
-  id              INTEGER PRIMARY KEY AUTOINCREMENT,
-  conversation_id TEXT NOT NULL,
-  role            TEXT NOT NULL,
-  content         TEXT NOT NULL,
-  status          TEXT NOT NULL DEFAULT 'complete',
-  error           TEXT,
-  created_at      TEXT NOT NULL
+CREATE INDEX IF NOT EXISTS idx_readings_created ON readings (created_at);
+
+-- 「继续追问」的对话，挂在一次求签下面。追问不会重新抽签，所以这里没有签号。
+CREATE TABLE IF NOT EXISTS reading_messages (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  reading_id TEXT NOT NULL,
+  role       TEXT NOT NULL,
+  content    TEXT NOT NULL,
+  status     TEXT NOT NULL DEFAULT 'complete',
+  error      TEXT,
+  created_at TEXT NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages (conversation_id, id);
+CREATE INDEX IF NOT EXISTS idx_reading_messages ON reading_messages (reading_id, id);
 `;
 
 /**

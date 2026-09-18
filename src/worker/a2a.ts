@@ -175,6 +175,12 @@ export async function describeFromCard(cardUrl: string): Promise<string> {
 
 /* ───────── streaming ───────── */
 
+/** 终态里代表「这一轮没成」的那些。失败时才值得多等一帧错误说明。 */
+const FAILURE_STATES = new Set(['failed', 'canceled', 'rejected', 'auth-required']);
+
+/** 失败终态之后，最多再等多久去接那一帧说明原因的 JSON-RPC error。 */
+const ERROR_FRAME_GRACE_MS = 1_500;
+
 export const TERMINAL_STATES = new Set([
   'completed',
   'failed',
@@ -362,11 +368,32 @@ export async function consumeA2AStream(options: {
   const decoder = new TextDecoder();
   let buffer = '';
   let received = false;
+  let terminal: StreamSnapshot | null = null;
+  let graceDeadline: number | null = null;
   try {
     while (true) {
       let chunk: ReadableStreamReadResult<Uint8Array>;
       try {
-        chunk = await reader.read();
+        // 已经拿到失败终态、正在等原因时，读取本身也要有上限，否则一个不关闭的流
+        // 会把这次等待拖到整轮超时。
+        if (graceDeadline === null) {
+          chunk = await reader.read();
+        } else {
+          let graceTimer: ReturnType<typeof setTimeout> | null = null;
+          try {
+            chunk = await Promise.race([
+              reader.read(),
+              new Promise<ReadableStreamReadResult<Uint8Array>>((resolve) => {
+                graceTimer = setTimeout(
+                  () => resolve({ done: true, value: undefined }),
+                  ERROR_FRAME_GRACE_MS,
+                );
+              }),
+            ]);
+          } finally {
+            if (graceTimer !== null) clearTimeout(graceTimer);
+          }
+        }
       } catch (error) {
         if ((error as Error)?.name === 'AbortError') {
           throw new A2AError(`${cred.label} stream timed out.`, true);
@@ -396,9 +423,20 @@ export async function consumeA2AStream(options: {
           received = true;
           const snapshot = snapshotFrom(accumulator);
           await options.onSnapshot?.(snapshot);
-          if (snapshot.terminal) return snapshot;
+          // 记下来但不一定马上返回：有的 agent（Manyfold 就是）把带原因的 JSON-RPC error
+          // 帧放在 final:true 之后。立刻 return 会把唯一一句说明失败原因的话丢掉
+          // （比如 "Codex model is required"），上游只能看到「没有文本」。
+          if (snapshot.terminal) terminal = snapshot;
         }
         boundary = buffer.indexOf('\n\n');
+      }
+      if (terminal) {
+        // 正常收场（有内容，或者是 completed / input-required 这类状态）就直接返回，
+        // 一秒都不多等。只有「失败且什么都没说」才值得再听一下原因，并且用 deadline
+        // 兜住：对方把流挂住不关，这里也只多花 ERROR_FRAME_GRACE_MS。
+        if (!FAILURE_STATES.has(terminal.state) || terminal.text) return terminal;
+        if (graceDeadline === null) graceDeadline = Date.now() + ERROR_FRAME_GRACE_MS;
+        else if (Date.now() >= graceDeadline) return terminal;
       }
     }
   } finally {
